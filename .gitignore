@@ -1,0 +1,24 @@
+# 設定檔（含密碼）
+config.php
+
+# 資料庫
+database/*.sqlite
+database/*.sqlite-wal
+database/*.sqlite-shm
+database/*.bak
+
+# 上傳檔案
+uploads/
+
+# Log
+cron/*.log
+
+# 暫存
+*.tmp
+.DS_Store
+
+# 備份檔
+*.bak
+
+# Cookie 快取（含登入 session）
+data/cookies/
