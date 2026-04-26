@@ -28,6 +28,7 @@ Flask app
 ### 前置條件
 - Raspberry Pi（Debian 12/13）
 - 已連上網路
+- 備妥 VPS 的 `sc_API_KEY`（在 VPS `config.php` 裡，安裝時需輸入，兩邊必須一致）
 
 ### 步驟
 

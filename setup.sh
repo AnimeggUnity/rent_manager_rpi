@@ -52,12 +52,17 @@ if [ ! -f "$RENT_DIR/config.php" ]; then
     read -p "唯讀密碼：  " VIEWER_PASS
     read -p "系統名稱 [柯柯管理系統]：" APP_NAME
     APP_NAME=${APP_NAME:-柯柯管理系統}
+    read -p "VPS 同步 API Key（須與 VPS config.php 一致）：" API_KEY
 
     sed \
         -e "s/your_admin_password/$ADMIN_PASS/" \
         -e "s/your_viewer_password/$VIEWER_PASS/" \
         -e "s/管理系統/$APP_NAME/" \
         "$RENT_DIR/config.example.php" > "$RENT_DIR/config.php"
+
+    echo "" >> "$RENT_DIR/config.php"
+    echo "// API" >> "$RENT_DIR/config.php"
+    echo "define('sc_API_KEY', '$API_KEY');" >> "$RENT_DIR/config.php"
     info "config.php 已產生"
 else
     warn "config.php 已存在，略過"
