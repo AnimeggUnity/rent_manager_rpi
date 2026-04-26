@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEM540N 即時電力監控</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #f0f2f5; font-family: 'PingFang TC', 'Heiti TC', sans-serif; margin: 0; }
+        .page-header-wrap { max-width: 800px; margin: 8px auto; padding: 0 8px; }
+        .page-header { background: #1a237e; color: white; padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-radius: 10px; }
+        .page-header h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+        .page-header .ms-auto { display: flex; gap: 8px; }
+
+        .room-row { background: white; border-radius: 10px; margin: 8px auto; padding: 12px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.06); min-height: 100px; max-width: 800px; }
+        .room-info { min-width: 130px; flex-shrink: 0; }
+        .room-name { font-size: 1rem; font-weight: 800; color: #1a237e; }
+        .room-kwh  { font-size: 1.4rem; font-weight: 900; color: #212121; line-height: 1.2; }
+        .room-kwh span { font-size: 0.7rem; color: #888; font-weight: 400; }
+        .room-meta { display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap; }
+        .watts-val { font-size: 0.85rem; font-weight: 700; color: #2e7d32; }
+        .status-tag { border-radius: 50px; padding: 1px 9px; font-weight: 700; font-size: 0.72rem; }
+        .power-on  { background: #e8f5e9; color: #2e7d32; border-radius: 50px; padding: 1px 9px; font-weight: 700; font-size: 0.72rem; }
+        .power-off { background: #ffebee; color: #c62828; border-radius: 50px; padding: 1px 9px; font-weight: 700; font-size: 0.72rem; }
+        .status-供電 { background: #e8f5e9; color: #2e7d32; }
+        .status-預付 { background: #e3f2fd; color: #1565c0; }
+        .status-欠費 { background: #fff3e0; color: #ef6c00; }
+        .status-強關 { background: #ffebee; color: #c62828; }
+        .chart-wrap { flex: 1; height: 130px; min-width: 0; }
+        .time-label { font-size: 0.65rem; color: #aaa; margin-top: 1px; text-align: right; }
+        .hour-usage { font-size: 0.78rem; color: #555; margin-top: 3px; }
+        .hour-usage strong { font-size: 1.05rem; color: #e65100; font-weight: 900; }
+        .ctrl-bar { border-top: 1px solid #f0f0f0; margin-top: 8px; padding-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .ctrl-bar .btn { font-size: 0.75rem; padding: 2px 10px; }
+
+        /* History Modal */
+        #historyTable thead th { background: #1a237e; color: white; position: sticky; top: 0; z-index: 1; }
+        #historyTable td, #historyTable th { font-size: 0.82rem; white-space: nowrap; }
+        .modal-table-wrap { max-height: 65vh; overflow-y: auto; }
+        .date-nav-wrap { max-width: 800px; margin: 8px auto; padding: 0 8px; }
+        .date-nav { background: #283593; color: white; padding: 7px 20px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 0.88rem; border-radius: 10px; }
+        .date-nav button { background: rgba(255,255,255,0.15); border: none; color: white; border-radius: 4px; padding: 3px 12px; cursor: pointer; font-size: 0.82rem; }
+        .date-nav button:disabled { opacity: 0.35; cursor: default; }
+        .date-nav button:not(:disabled):hover { background: rgba(255,255,255,0.28); }
+        #date-display { font-weight: 700; min-width: 88px; text-align: center; cursor: pointer; user-select: none; }
+        #date-display:hover { opacity: 0.8; }
+        .cal-wrap { max-width: 320px; margin: 8px auto; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 10px 14px; }
+        .cal-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .cal-nav-btn { background: none; border: none; font-size: 1.1rem; cursor: pointer; color: #1a237e; padding: 2px 8px; border-radius: 4px; line-height: 1; }
+        .cal-nav-btn:hover:not(:disabled) { background: #e8eaf6; }
+        .cal-nav-btn:disabled { opacity: 0.3; cursor: default; }
+        .cal-title { font-weight: 700; color: #1a237e; font-size: 0.88rem; }
+        .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 2px; }
+        .cal-weekdays span { text-align: center; font-size: 0.68rem; color: #aaa; padding: 2px 0; }
+        #cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+        .cal-cell { text-align: center; font-size: 0.8rem; padding: 5px 2px; border-radius: 6px; cursor: pointer; color: #444; line-height: 1.2; }
+        .cal-cell:hover { background: #e8eaf6; }
+        .cal-cell.has-data { font-weight: 700; color: #1a237e; }
+        .cal-cell.has-data::after { content: ''; display: block; width: 4px; height: 4px; background: #2e7d32; border-radius: 50%; margin: 1px auto 0; }
+        .cal-cell.selected { background: #1a237e !important; color: white !important; }
+        .cal-cell.selected.has-data::after { background: rgba(255,255,255,0.7); }
+        .cal-cell.is-today { border: 1.5px solid #1a237e; }
+        .cal-cell.future { color: #ccc; cursor: default; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div class="page-header-wrap">
+    <div class="page-header">
+        <h1>⚡ 建物電力監控</h1>
+        <div class="ms-auto">
+            <span id="pi-time" style="font-size:0.85rem;opacity:0.85;font-family:monospace;"></span>
+            <button class="btn btn-light btn-sm" onclick="openHistory()">📋 歷史紀錄</button>
+            <a class="btn btn-outline-light btn-sm" href="/anomalies" target="_blank">🔍 異常幀</a>
+        </div>
+    </div>
+</div>
+
+<div class="date-nav-wrap">
+    <div class="date-nav">
+        <button onclick="prevDay()">‹ 前一天</button>
+        <span id="date-display" onclick="toggleCalendar()">今天</span>
+        <button onclick="nextDay()" id="next-btn" disabled>後一天 ›</button>
+    </div>
+</div>
+
+<div class="cal-wrap" id="cal-section" style="display:none;">
+    <div class="cal-hdr">
+        <button class="cal-nav-btn" onclick="calPrevMonth()">‹</button>
+        <span id="cal-title" class="cal-title"></span>
+        <button class="cal-nav-btn" id="cal-next-btn" onclick="calNextMonth()">›</button>
+    </div>
+    <div class="cal-weekdays">
+        <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+    </div>
+    <div id="cal-grid"></div>
+</div>
+
+<div id="main-area"></div>
+
+<!-- 歷史 Modal -->
+<div class="modal fade" id="historyModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header" style="background:#1a237e;color:white;">
+                <h5 class="modal-title">歷史紀錄</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
+                    <span class="text-muted small">顯示天數：</span>
+                    <button class="btn btn-sm btn-primary days-btn" data-days="1">1天</button>
+                    <button class="btn btn-sm btn-outline-primary days-btn" data-days="3">3天</button>
+                    <button class="btn btn-sm btn-outline-primary days-btn" data-days="7">7天</button>
+                    <button class="btn btn-sm btn-outline-primary days-btn" data-days="30">30天</button>
+                    <span class="ms-auto text-muted small" id="historyCount"></span>
+                </div>
+                <div class="modal-table-wrap">
+                    <table class="table table-striped table-bordered table-sm mb-0" id="historyTable">
+                        <thead><tr id="historyHead"></tr></thead>
+                        <tbody id="historyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const ROOM_ORDER = ["301室","302室","303室","401室","402室","403室"];
+    const allCharts = {};
+    let historyDays = 1;
+    let recordedDates = new Set();
+    let calYear, calMonth;
+
+    // ── 即時狀態 ──────────────────────────────────────
+    function buildRow(item) {
+        const div = document.createElement("div");
+        div.className = "room-row";
+        div.id = "row-" + item.id;
+        div.innerHTML = `
+            <div class="room-info">
+                <div class="room-name">${item.room}</div>
+                <div class="room-kwh" id="kwh-${item.id}">${item.kwh}<span> kWh</span></div>
+                <div class="room-meta">
+                    <span class="watts-val" id="pwr-${item.id}">${fmtWatts(item.watts)}</span>
+                    <span class="status-tag status-${item.status}" id="stat-${item.id}">${item.status}</span>
+                    <span id="pwr-state-${item.id}"></span>
+                </div>
+                <div class="hour-usage">本時 <strong id="hour-${item.id}">--</strong> kWh</div>
+                <div class="hour-usage">餘度 <strong id="bal-${item.id}" style="color:#1565c0">--</strong> 度</div>
+                <div class="hour-usage">當日 <strong id="avg-${item.id}" style="color:#6a1b9a">--</strong> kWh</div>
+            </div>
+            <div class="chart-wrap">
+                <canvas id="canvas-${item.id}"></canvas>
+            </div>
+            <div class="ctrl-bar" style="flex: 0 0 100%;">
+                <div id="grp-normal-${item.id}">
+                    <button class="btn btn-success"  onclick="doAction(${item.id},'force_on')">強制開電</button>
+                    <button class="btn btn-danger"   onclick="doAction(${item.id},'force_off')">強制關電</button>
+                    <button class="btn btn-warning"  onclick="doAction(${item.id},'prepaid_mode')">切換儲值模式</button>
+                </div>
+                <div id="grp-prepaid-${item.id}" style="display:none">
+                    <button class="btn btn-success"  onclick="doAction(${item.id},'prepaid_on')">儲值開電</button>
+                    <button class="btn btn-danger"   onclick="doAction(${item.id},'prepaid_off')">儲值關電</button>
+                    <button class="btn btn-outline-secondary" onclick="doAction(${item.id},'exit_prepaid')">退出儲值模式</button>
+                    <input id="recharge-input-${item.id}" type="number" min="0.01" step="0.01" placeholder="加幾度" style="width:80px;font-size:0.85rem;padding:2px 6px;border:1px solid #ccc;border-radius:4px;">
+                    <button class="btn btn-primary"  onclick="sendRecharge(${item.id})">儲值</button>
+                    <button class="btn btn-outline-danger" onclick="sendZero(${item.id})">歸零</button>
+                </div>
+            </div>
+            `;
+        return div;
+    }
+
+    function fmtWatts(w) { return w === -1 ? "<60W" : w + " W"; }
+    const STATUS_DISPLAY = { "供電": "強制供電", "強關": "強制關電" };
+    function fmtStatus(s) { return STATUS_DISPLAY[s] || s; }
+
+    const ACTION_LABELS = {
+        force_on: "強制開電", force_off: "強制關電", prepaid_mode: "切換儲值模式",
+        exit_prepaid: "退出儲值模式", prepaid_on: "儲值開電", prepaid_off: "儲值關電"
+    };
+
+    async function doAction(unit_id, action) {
+        if (!confirm(`確認執行：${ACTION_LABELS[action]}？`)) return;
+        const res = await fetch(`/api/action/${unit_id}/${action}`, { method: "POST" });
+        const json = await res.json();
+        alert(json.ok ? `${ACTION_LABELS[action]} 已送出` : `失敗：${json.error}`);
+    }
+
+    async function sendZero(unit_id) {
+        if (!confirm("確認將餘度歸零？")) return;
+        const res = await fetch(`/api/zero/${unit_id}`, { method: "POST" });
+        const json = await res.json();
+        alert(json.ok ? "已歸零" : `失敗：${json.error}`);
+    }
+
+    async function sendRecharge(unit_id) {
+        const kwh = parseFloat(document.getElementById("recharge-input-" + unit_id).value);
+        if (!kwh || kwh <= 0) { alert("請輸入有效度數"); return; }
+        const balEl = document.getElementById("bal-" + unit_id);
+        const current = balEl ? parseFloat(balEl.textContent) : "?";
+        const after = (parseFloat(current) + kwh).toFixed(2);
+        if (!confirm(`充值 ${kwh} 度\n目前：${current} 度 → 寫入後：${after} 度`)) return;
+        const res = await fetch(`/api/recharge/${unit_id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kwh })
+        });
+        const json = await res.json();
+        alert(json.ok ? `完成　${json.before} + ${json.added} = ${json.after} 度` : `失敗：${json.error}`);
+    }
+
+    async function globalUpdate() {
+        const res  = await fetch("/api/status?nc=" + Date.now());
+        const data = await res.json();
+        const area = document.getElementById("main-area");
+
+        document.getElementById("pi-time").textContent = data.time;
+
+        data.rooms.sort((a, b) => ROOM_ORDER.indexOf(a.room) - ROOM_ORDER.indexOf(b.room));
+
+        data.rooms.forEach(item => {
+            if (!document.getElementById("row-" + item.id)) {
+                area.appendChild(buildRow(item));
+                loadChart(item.id);
+            }
+            document.getElementById("kwh-" + item.id).innerHTML = item.kwh + '<span> kWh</span>';
+            document.getElementById("pwr-" + item.id).innerHTML = fmtWatts(item.watts);
+            const st = document.getElementById("stat-" + item.id);
+            st.innerText = fmtStatus(item.status);
+            st.className = "status-tag status-" + item.status;
+            const balEl = document.getElementById("bal-" + item.id);
+            if (balEl) balEl.textContent = item.balance.toFixed(2);
+            const isPrepaid = ["預付","欠費","預關"].includes(item.status);
+            const pwrEl = document.getElementById("pwr-state-" + item.id);
+            if (pwrEl) {
+                const isOn = ["供電","預付","預關"].includes(item.status);
+                pwrEl.className = isOn ? "power-on" : "power-off";
+                pwrEl.textContent = isOn ? "供電" : "關電";
+            }
+            const grpN = document.getElementById("grp-normal-"  + item.id);
+            const grpP = document.getElementById("grp-prepaid-" + item.id);
+            if (grpN) grpN.style.display = isPrepaid ? "none" : "";
+            if (grpP) grpP.style.display = isPrepaid ? "" : "none";
+        });
+    }
+
+    // ── 日期導覽 ─────────────────────────────────────
+    let currentChartDate = null; // null = 今天
+
+    function localDateStr(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    function prevDay() {
+        const base = currentChartDate ? new Date(currentChartDate + 'T00:00:00') : new Date();
+        base.setDate(base.getDate() - 1);
+        currentChartDate = localDateStr(base);
+        calYear = base.getFullYear();
+        calMonth = base.getMonth() + 1;
+        updateDateNav();
+        reloadAllCharts();
+        renderCalendar();
+    }
+
+    function nextDay() {
+        if (!currentChartDate) return;
+        const d = new Date(currentChartDate + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        const today = localDateStr(new Date());
+        currentChartDate = localDateStr(d) >= today ? null : localDateStr(d);
+        const ref = currentChartDate ? new Date(currentChartDate + 'T00:00:00') : new Date();
+        calYear = ref.getFullYear();
+        calMonth = ref.getMonth() + 1;
+        updateDateNav();
+        reloadAllCharts();
+        if (!currentChartDate) hideCalendar(); else renderCalendar();
+    }
+
+    function goToday() {
+        currentChartDate = null;
+        const t = new Date();
+        calYear = t.getFullYear();
+        calMonth = t.getMonth() + 1;
+        updateDateNav();
+        reloadAllCharts();
+        hideCalendar();
+    }
+
+    function updateDateNav() {
+        document.getElementById('date-display').textContent = currentChartDate || '今天';
+        document.getElementById('next-btn').disabled = !currentChartDate;
+    }
+
+    function toggleCalendar() {
+        const sec = document.getElementById('cal-section');
+        if (sec.style.display === 'none') {
+            renderCalendar();
+            sec.style.display = '';
+        } else {
+            sec.style.display = 'none';
+        }
+    }
+
+    function hideCalendar() {
+        document.getElementById('cal-section').style.display = 'none';
+    }
+
+    function reloadAllCharts() {
+        Object.keys(allCharts).forEach(id => loadChart(parseInt(id)));
+    }
+
+    // ── 月曆 ─────────────────────────────────────────
+    async function fetchRecordedDates() {
+        const res = await fetch('/api/recorded_dates');
+        const list = await res.json();
+        recordedDates = new Set(list);
+    }
+
+    function renderCalendar() {
+        const today = localDateStr(new Date());
+        const [ty, tm] = today.split('-').map(Number);
+        const monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+        document.getElementById('cal-title').textContent = `${calYear}年 ${monthNames[calMonth - 1]}`;
+        document.getElementById('cal-next-btn').disabled = (calYear > ty || (calYear === ty && calMonth >= tm));
+
+        const selected = currentChartDate || today;
+        const firstDow = new Date(calYear, calMonth - 1, 1).getDay();
+        const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+
+        const grid = document.getElementById('cal-grid');
+        grid.innerHTML = '';
+
+        for (let i = 0; i < firstDow; i++) {
+            grid.appendChild(Object.assign(document.createElement('div'), { className: 'cal-cell' }));
+        }
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const ds = `${calYear}-${String(calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const el = document.createElement('div');
+            el.textContent = d;
+            const cls = ['cal-cell'];
+            if (ds > today) {
+                cls.push('future');
+            } else {
+                if (recordedDates.has(ds)) cls.push('has-data');
+                if (ds === today) cls.push('is-today');
+                if (ds === selected) cls.push('selected');
+                el.onclick = () => selectCalDate(ds === today ? null : ds);
+            }
+            el.className = cls.join(' ');
+            grid.appendChild(el);
+        }
+    }
+
+    function selectCalDate(dateStr) {
+        currentChartDate = dateStr;
+        updateDateNav();
+        reloadAllCharts();
+        hideCalendar();
+    }
+
+    function calPrevMonth() {
+        calMonth--;
+        if (calMonth < 1) { calMonth = 12; calYear--; }
+        renderCalendar();
+    }
+
+    function calNextMonth() {
+        const today = localDateStr(new Date());
+        const [ty, tm] = today.split('-').map(Number);
+        if (calYear > ty || (calYear === ty && calMonth >= tm)) return;
+        calMonth++;
+        if (calMonth > 12) { calMonth = 1; calYear++; }
+        renderCalendar();
+    }
+
+    // ── 長條圖 ───────────────────────────────────────
+    async function loadChart(id) {
+        const url = currentChartDate ? `/api/history/${id}?date=${currentChartDate}` : `/api/history/${id}`;
+        const res  = await fetch(url);
+        const json = await res.json();
+        const canvas = document.getElementById("canvas-" + id);
+        if (!canvas) return;
+        if (allCharts[id]) allCharts[id].destroy();
+
+        const isToday = !currentChartDate;
+        const currentHour = isToday ? new Date().getHours() : -1;
+        const hourEl = document.getElementById("hour-" + id);
+        if (hourEl) {
+            if (isToday) {
+                const hourVal = json.usage[currentHour];
+                hourEl.textContent = hourVal > 0 ? hourVal.toFixed(3) : "0.000";
+            } else {
+                hourEl.textContent = "--";
+            }
+        }
+
+        const avgEl = document.getElementById("avg-" + id);
+        if (avgEl) {
+            const total = json.usage.reduce((a, b) => a + b, 0);
+            avgEl.textContent = total > 0 ? total.toFixed(3) : "--";
+        }
+
+        const barColors = json.usage.map((_, i) =>
+            i === currentHour ? "rgba(230,81,0,0.85)" : "rgba(26,35,126,0.45)"
+        );
+
+        const BASELINE = 0.2;
+
+        allCharts[id] = new Chart(canvas.getContext("2d"), {
+            type: "bar",
+            data: {
+                labels: json.labels,
+                datasets: [
+                    {
+                        data: json.usage,
+                        backgroundColor: barColors,
+                        borderWidth: 0,
+                        borderRadius: 3,
+                        order: 2
+                    },
+                    {
+                        type: "line",
+                        data: Array(24).fill(BASELINE),
+                        borderColor: "rgba(200,0,0,0.5)",
+                        borderWidth: 1.5,
+                        borderDash: [4, 3],
+                        pointRadius: 0,
+                        fill: false,
+                        order: 1,
+                        tooltip: { enabled: false }
+                    }
+                ]
+            },
+            plugins: [{
+                afterDraw(chart) {
+                    const ctx = chart.ctx;
+                    const xAxis = chart.scales.x;
+                    ctx.save();
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.fillStyle = '#e65100';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    xAxis.ticks.forEach((tick, i) => {
+                        const u = json.usage[tick.value];
+                        if (u > 0) ctx.fillText(u.toFixed(2), xAxis.getPixelForTick(i), xAxis.bottom + 3);
+                    });
+                    ctx.restore();
+                }
+            }],
+            options: {
+                layout: { padding: { bottom: 18 } },
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        filter: item => item.datasetIndex === 0,
+                        callbacks: { label: ctx => ctx.parsed.y.toFixed(3) + " kWh" }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+                    y: {
+                        display: true,
+                        beginAtZero: true,
+                        suggestedMax: 0.25,
+                        ticks: { font: { size: 11 }, maxTicksLimit: 4, callback: v => v.toFixed(1) },
+                        grid: { color: "rgba(0,0,0,0.06)" }
+                    }
+                }
+            }
+        });
+    }
+
+    const _initToday = new Date();
+    calYear = _initToday.getFullYear();
+    calMonth = _initToday.getMonth() + 1;
+    fetchRecordedDates();
+
+    globalUpdate();
+    setInterval(globalUpdate, 5000);
+    setInterval(() => { if (!currentChartDate) Object.keys(allCharts).forEach(id => loadChart(id)); }, 600000);
+
+    // ── 歷史 Modal ───────────────────────────────────
+    async function loadHistory() {
+        const colspan = 1 + ROOM_ORDER.length;
+        document.getElementById("historyHead").innerHTML =
+            "<th>時間</th>" + ROOM_ORDER.map(r => `<th>${r}</th>`).join("");
+        document.getElementById("historyBody").innerHTML =
+            `<tr><td colspan="${colspan}" class="text-center text-muted">載入中...</td></tr>`;
+        document.getElementById("historyCount").innerText = "";
+
+        const res  = await fetch("/api/history_table?days=" + historyDays);
+        const json = await res.json();
+        const rows = json.rows;
+
+        const slots = {};
+        rows.forEach(r => {
+            if (!slots[r.time]) slots[r.time] = {};
+            slots[r.time][r.room] = { kwh: r.kwh, usage: r.usage };
+        });
+
+        const hourSlots = {};
+        Object.keys(slots).forEach(t => {
+            const h = t.slice(0, 13);
+            if (!hourSlots[h]) hourSlots[h] = [];
+            hourSlots[h].push(t);
+        });
+
+        const hours = Object.keys(hourSlots).sort().reverse();
+        document.getElementById("historyCount").innerText = `共 ${hours.length} 小時`;
+
+        document.getElementById("historyBody").innerHTML = hours.map(h => {
+            const cells = ROOM_ORDER.map(room => {
+                let total = 0, hasData = false, lastKwh = null;
+                hourSlots[h].forEach(t => {
+                    const d = slots[t][room];
+                    if (!d) return;
+                    lastKwh = d.kwh;
+                    if (d.usage !== null) { total += d.usage; hasData = true; }
+                });
+                if (lastKwh === null) return "<td>-</td>";
+                return `<td><div class="fw-bold">${hasData ? total.toFixed(3) : "-"}</div><div class="text-muted small">${lastKwh}</div></td>`;
+            });
+            return `<tr><td class="text-muted small">${h.slice(5)}:00</td>${cells.join("")}</tr>`;
+        }).join("");
+    }
+
+    function openHistory() {
+        new bootstrap.Modal(document.getElementById("historyModal")).show();
+        loadHistory();
+    }
+
+    document.querySelectorAll(".days-btn").forEach(btn => {
+        btn.addEventListener("click", function() {
+            document.querySelectorAll(".days-btn").forEach(b => {
+                b.classList.remove("btn-primary");
+                b.classList.add("btn-outline-primary");
+            });
+            this.classList.remove("btn-outline-primary");
+            this.classList.add("btn-primary");
+            historyDays = parseInt(this.dataset.days);
+            loadHistory();
+        });
+    });
+</script>
+</body>
+</html>

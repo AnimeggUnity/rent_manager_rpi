@@ -1,0 +1,17 @@
+# 資料庫
+*.db
+*.db-wal
+*.db-shm
+*.bak
+*.bak*
+
+# Python
+__pycache__/
+*.pyc
+modbus_venv/
+
+# Log
+*.log
+
+# 暫存
+.DS_Store
