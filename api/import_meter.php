@@ -18,19 +18,14 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/meter_report_query.php';
 
 try {
-    // 1. 讀取設定
-    $configDir = __DIR__ . '/../config';
-    $configFile = $configDir . '/meter_config.json';
-    
-    if (!file_exists($configFile)) {
-        throw new Exception("找不到設定檔，請先儲存帳號密碼");
+    // 1. 從 POST 取得帳密（不存檔，用完即丟）
+    $username = trim($_POST['username'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    if (empty($username) || empty($password)) {
+        throw new Exception("請輸入帳號與密碼");
     }
-    
-    $config = json_decode(file_get_contents($configFile), true);
-    if (!$config || empty($config['username']) || empty($config['password'])) {
-        throw new Exception("設定檔損毀或缺少帳密");
-    }
-    
+    $config = ['username' => $username, 'password' => $password];
+
     // 2. 獲取合約與房間資訊 (Smart Filter 準備)
     $pdo = DB::connect();
     

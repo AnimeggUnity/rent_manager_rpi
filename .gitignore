@@ -22,4 +22,3 @@ cron/*.log
 
 # Cookie 快取（含登入 session）
 data/cookies/
-config/meter_config.json

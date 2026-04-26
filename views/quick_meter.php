@@ -70,15 +70,7 @@ $units = DB::connect()->query("
     ORDER BY u.name ASC
 ")->fetchAll();
 
-// Load Meter Config for Auto-Import
-$meterConfig = ['username' => '', 'password' => ''];
-$configFile = __DIR__ . '/../config/meter_config.json';
-if (file_exists($configFile)) {
-    $loaded = json_decode(file_get_contents($configFile), true);
-    if ($loaded) {
-        $meterConfig = array_merge($meterConfig, $loaded);
-    }
-}
+// 帳密由前端 localStorage 管理，不在伺服器端儲存
 ?>
 
 <div class="pt-3 pb-2 mb-3 border-bottom d-flex justify-content-between align-items-center">
@@ -99,17 +91,14 @@ if (file_exists($configFile)) {
                 <div class="row g-3 align-items-end">
                     <div class="col-md-4">
                         <label class="form-label small text-muted">帳號 (User)</label>
-                        <input type="text" id="meterUser" class="form-control" placeholder="輸入帳號" value="<?= htmlspecialchars($meterConfig['username']) ?>">
+                        <input type="text" id="meterUser" class="form-control" placeholder="輸入帳號">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label small text-muted">密碼 (Password)</label>
-                        <input type="password" id="meterPass" class="form-control" placeholder="輸入密碼" value="<?= htmlspecialchars($meterConfig['password']) ?>">
+                        <input type="password" id="meterPass" class="form-control" placeholder="輸入密碼">
                     </div>
                     <div class="col-md-4">
                          <div class="d-flex gap-2">
-                            <button class="btn btn-secondary flex-grow-1" onclick="saveMeterSettings()">
-                                <i class="bi bi-save"></i> 儲存
-                            </button>
                             <button class="btn btn-primary flex-grow-1" onclick="runMeterImport()">
                                 <i class="bi bi-play-fill"></i> 執行匯入
                             </button>
@@ -403,33 +392,37 @@ if (file_exists($configFile)) {
     
     // --- Auto Import Functions ---
     
-    function saveMeterSettings() {
-        const user = document.getElementById('meterUser').value;
-        const pass = document.getElementById('meterPass').value;
-        
-        if(!user || !pass) { alert('請輸入帳號與密碼'); return; }
-        
-        fetch('api/save_meter_settings.php', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: `username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`
-        })
-        .then(r => r.json())
-        .then(data => {
-            if(data.success) { alert('設定已儲存'); }
-            else { alert('儲存失敗: ' + data.message); }
-        })
-        .catch(e => alert('連線錯誤'));
+    // 從 localStorage 還原帳密
+    (function() {
+        const u = localStorage.getItem('dae_username');
+        const p = localStorage.getItem('dae_password');
+        if (u) document.getElementById('meterUser').value = u;
+        if (p) document.getElementById('meterPass').value = p;
+    })();
+
+    function getCredentials() {
+        const user = document.getElementById('meterUser').value.trim();
+        const pass = document.getElementById('meterPass').value.trim();
+        if (!user || !pass) { alert('請輸入帳號與密碼'); return null; }
+        localStorage.setItem('dae_username', user);
+        localStorage.setItem('dae_password', pass);
+        return { user, pass };
     }
-    
+
     function runMeterImport(forceFull = false) {
-        // Show loading
+        const cred = getCredentials();
+        if (!cred) return;
+
         document.getElementById('importStatus').classList.remove('d-none');
         document.getElementById('importResultPanel').classList.add('d-none');
-        
+
         const url = forceFull ? 'api/import_meter.php?force_full=1' : 'api/import_meter.php';
-        
-        fetch(url)
+
+        fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}`
+        })
         .then(r => r.json())
         .then(data => {
             document.getElementById('importStatus').classList.add('d-none');
