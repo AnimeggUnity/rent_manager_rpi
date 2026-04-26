@@ -5,7 +5,7 @@
 
 set -e
 
-REPO="git@github.com:AnimeggUnity/rent_manager_rpi.git"
+REPO="https://github.com/AnimeggUnity/rent_manager_rpi.git"
 RENT_DIR="$HOME/rent_manager"
 FLASK_DIR="$HOME/flask_web"
 VENV_DIR="$HOME/modbus_venv"
@@ -24,17 +24,16 @@ sudo apt-get install -y \
     python3 python3-venv \
     sqlite3 curl
 
-# ── 2. SSH key（若無則產生） ────────────────────────────────────────────────────
+# ── 2. SSH key（供 git push 用） ───────────────────────────────────────────────
 if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-    info "產生 SSH key..."
+    info "產生 SSH key（供日後 git push 使用）..."
     ssh-keygen -t ed25519 -C "rpi@rent_manager" -f "$HOME/.ssh/id_ed25519" -N ""
     echo ""
-    warn "請將以下公鑰加到 GitHub Settings → SSH keys，完成後按 Enter 繼續："
+    warn "公鑰如下，請加到 GitHub Settings → SSH keys（之後 push 才能用）："
     echo ""
     cat "$HOME/.ssh/id_ed25519.pub"
     echo ""
-    read -p "（加完後按 Enter）"
-    ssh -o StrictHostKeyChecking=no -T git@github.com 2>&1 || true
+    read -p "（記下後按 Enter 繼續安裝）"
 fi
 
 # ── 3. Clone 程式碼 ────────────────────────────────────────────────────────────
@@ -64,13 +63,32 @@ else
     warn "config.php 已存在，略過"
 fi
 
-# ── 5. 建立資料庫目錄與權限 ────────────────────────────────────────────────────
+# ── 5. DAE 平台設定（電表爬蟲帳號） ───────────────────────────────────────────
+METER_CFG="$RENT_DIR/config/meter_config.json"
+if [ ! -f "$METER_CFG" ]; then
+    info "設定 DAE 平台帳號（clh25.dae.tw）..."
+    echo ""
+    read -p "DAE 帳號：" DAE_USER
+    read -p "DAE 密碼：" DAE_PASS
+    cat > "$METER_CFG" << CFGEOF
+{
+    "username": "$DAE_USER",
+    "password": "$DAE_PASS",
+    "updated_at": "$(date '+%Y-%m-%d %H:%M:%S')"
+}
+CFGEOF
+    info "meter_config.json 已產生"
+else
+    warn "meter_config.json 已存在，略過"
+fi
+
+# ── 6. 建立資料庫目錄與權限 ────────────────────────────────────────────────────
 info "設定目錄權限..."
 mkdir -p "$RENT_DIR/database" "$RENT_DIR/uploads" "$RENT_DIR/data/cookies"
 sudo chown -R www-data:www-data "$RENT_DIR/database" "$RENT_DIR/uploads"
 sudo chmod -R 775 "$RENT_DIR/database" "$RENT_DIR/uploads"
 
-# ── 6. Python venv ─────────────────────────────────────────────────────────────
+# ── 7. Python venv ─────────────────────────────────────────────────────────────
 info "建立 Python venv..."
 if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
@@ -79,7 +97,7 @@ fi
     Flask flask-cors minimalmodbus pyserial rich
 info "Python 套件安裝完成"
 
-# ── 7. Nginx 設定 ──────────────────────────────────────────────────────────────
+# ── 8. Nginx 設定 ──────────────────────────────────────────────────────────────
 info "設定 Nginx..."
 sudo tee /etc/nginx/sites-available/rent_manager > /dev/null << 'NGINXEOF'
 server {
@@ -123,7 +141,7 @@ sudo ln -sf /etc/nginx/sites-available/rent_manager /etc/nginx/sites-enabled/def
 sudo nginx -t && sudo systemctl restart nginx
 info "Nginx 設定完成"
 
-# ── 8. Systemd service（Flask 電表監控） ────────────────────────────────────────
+# ── 9. Systemd service（Flask 電表監控） ────────────────────────────────────────
 info "設定 meter_monitor.service..."
 sudo tee /etc/systemd/system/meter_monitor.service > /dev/null << SVCEOF
 [Unit]
@@ -147,13 +165,13 @@ sudo systemctl enable meter_monitor
 sudo systemctl start meter_monitor
 info "meter_monitor.service 已啟動"
 
-# ── 9. Cron ────────────────────────────────────────────────────────────────────
+# ── 10. Cron ───────────────────────────────────────────────────────────────────
 info "設定 cron..."
 CRON_JOB="0 0 * * * /usr/bin/php $RENT_DIR/cron/daily_meter_snapshot.php >> $RENT_DIR/cron/meter_snapshot.log 2>&1"
 ( crontab -l 2>/dev/null | grep -v "daily_meter_snapshot"; echo "$CRON_JOB" ) | crontab -
 info "Cron 設定完成"
 
-# ── 10. 完成 ───────────────────────────────────────────────────────────────────
+# ── 11. 完成 ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}=============================${NC}"
 echo -e "${GREEN} 安裝完成！${NC}"

@@ -32,7 +32,7 @@ Flask app
 ### 步驟
 
 ```bash
-# 1. 下載安裝腳本
+# 1. 下載安裝腳本（不需要先設 SSH key，public repo 直接下載）
 curl -O https://raw.githubusercontent.com/AnimeggUnity/rent_manager_rpi/main/setup.sh
 
 # 2. 執行
@@ -41,11 +41,14 @@ bash setup.sh
 
 腳本會自動完成：
 - 安裝所有套件（nginx、php8.4、python3 等）
-- Clone 程式碼
-- 互動式設定密碼（產生 config.php）
+- Clone 程式碼（HTTPS，不需 SSH key）
+- 互動式設定密碼，產生以下設定檔：
+  - `config.php`（管理員密碼、唯讀密碼）
+  - `config/meter_config.json`（DAE 平台帳號密碼）
 - 設定 nginx、php-fpm
 - 建立 systemd service（Flask 電表監控）
 - 設定 cron（每日 00:00 快照電表度數）
+- 產生 SSH key（供日後 `git push` 使用）
 
 ### 還原資料庫
 安裝完成後，將備份的資料庫複製回來：
