@@ -9,7 +9,7 @@ require_once __DIR__ . '/../config.php';
 
 date_default_timezone_set('Asia/Taipei');
 
-const VPS_API   = 'http://580.blias.com/rent_manager/api/save_reading_batch.php';
+const VPS_API   = 'https://580.blias.com/rent_manager/api/save_reading_batch.php';
 const SYNC_DAYS = 30;
 
 $log_prefix = "[" . date('Y-m-d H:i:s') . "] ";
