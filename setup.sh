@@ -63,21 +63,11 @@ else
     warn "config.php 已存在，略過"
 fi
 
-# ── 5. DAE 平台設定（電表爬蟲帳號） ───────────────────────────────────────────
+# ── 5. DAE 設定檔（空白，安裝後從瀏覽器設定） ─────────────────────────────────
 METER_CFG="$RENT_DIR/config/meter_config.json"
 if [ ! -f "$METER_CFG" ]; then
-    info "設定 DAE 平台帳號（clh25.dae.tw）..."
-    echo ""
-    read -p "DAE 帳號：" DAE_USER
-    read -p "DAE 密碼：" DAE_PASS
-    cat > "$METER_CFG" << CFGEOF
-{
-    "username": "$DAE_USER",
-    "password": "$DAE_PASS",
-    "updated_at": "$(date '+%Y-%m-%d %H:%M:%S')"
-}
-CFGEOF
-    info "meter_config.json 已產生"
+    cp "$RENT_DIR/config/meter_config.example.json" "$METER_CFG"
+    info "meter_config.json 已建立（請安裝完成後從瀏覽器設定 DAE 帳號）"
 else
     warn "meter_config.json 已存在，略過"
 fi
