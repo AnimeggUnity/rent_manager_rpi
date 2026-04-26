@@ -1,8 +1,4 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 // Handle Backup Export (ZIP)
 if (isset($_GET['action']) && $_GET['action'] === 'export_backup') {
     $pdo = DB::connect();
@@ -34,7 +30,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'export_backup') {
                 // Generate CSV with Excel trick for leading zeros
                 $csv = fopen('php://temp', 'r+');
                 fprintf($csv, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
-                fputcsv($csv, array_values($cols));
+                fputcsv($csv, array_values($cols), ',', '"', '\\');
                 foreach ($rows as $row) {
                     $clean_row = [];
                     foreach ($cols as $orig_key => $zh_name) {
@@ -46,7 +42,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'export_backup') {
                             $clean_row[] = $val;
                         }
                     }
-                    fputcsv($csv, $clean_row);
+                    fputcsv($csv, $clean_row, ',', '"', '\\');
                 }
                 rewind($csv);
                 $zip->addFromString("csv_for_excel/{$table}.csv", stream_get_contents($csv));
@@ -90,12 +86,12 @@ if (isset($_GET['download_sample'])) {
     fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM for Excel
     
     if ($type === 'units') {
-        fputcsv($output, ['房源名稱', '基本租金', '備註']);
-        fputcsv($output, ['101', '8500', '採光佳']);
+        fputcsv($output, ['房源名稱', '基本租金', '備註'], ',', '"', '\\');
+        fputcsv($output, ['101', '8500', '採光佳'], ',', '"', '\\');
     } elseif ($type === 'tenants') {
-        fputcsv($output, ['房客姓名', '聯絡電話', '房源名稱', '起租日期', '退租日期', '押金', '收租日(1-28)']);
+        fputcsv($output, ['房客姓名', '聯絡電話', '房源名稱', '起租日期', '退租日期', '押金', '收租日(1-28)'], ',', '"', '\\');
         // Use Excel Trick for Sample Phone
-        fputcsv($output, ['張三', '="0912345678"', '101', date('Y-m-d'), date('Y-m-d', strtotime('+1 year')), '17000', '5']);
+        fputcsv($output, ['張三', '="0912345678"', '101', date('Y-m-d'), date('Y-m-d', strtotime('+1 year')), '17000', '5'], ',', '"', '\\');
     }
     fclose($output);
     exit;
