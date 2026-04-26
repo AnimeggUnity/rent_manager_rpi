@@ -3,13 +3,22 @@
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../config.php';
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         throw new Exception("只允許 POST 請求");
     }
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
+
+    $apiKey = $input['api_key'] ?? '';
+    if ($apiKey !== sc_API_KEY) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        exit;
+    }
+
     if (!isset($input['readings']) || !is_array($input['readings'])) {
         throw new Exception("無效的資料格式");
     }
