@@ -686,6 +686,127 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
     </div>
 </div>
 
+<!-- ========================================== -->
+<!--       365 天用電日曆熱力圖 (CSS & HTML)        -->
+<!-- ========================================== -->
+<style>
+/* 熱力圖排版樣式 */
+.heatmap-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+}
+
+.heatmap-months-labels {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 15px; /* 12px cell + 3px gap */
+    height: 20px;
+    font-size: 0.72rem;
+    color: #6c757d;
+    margin-left: 24px; /* 16px label + 8px gap */
+    margin-bottom: 2px;
+}
+
+.heatmap-weekdays {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 102px; /* 12px * 7 + 3px * 6 gap = 102px */
+    font-size: 0.68rem;
+    color: #6c757d;
+    width: 16px;
+    text-align: center;
+    padding-top: 1px;
+}
+
+.heatmap-grid {
+    display: grid;
+    grid-template-rows: repeat(7, 12px);
+    grid-auto-flow: column;
+    grid-auto-columns: 12px;
+    gap: 3px;
+    min-width: 785px; /* (12px + 3px) * 52 weeks = 780px + buffer */
+}
+
+/* 方格基礎樣式 */
+.heatmap-day {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background-color: var(--hm-bg, #ebedf0);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.heatmap-day:hover {
+    transform: scale(1.35);
+    z-index: 5;
+    box-shadow: 0 0 4px rgba(0,0,0,0.3);
+}
+
+/* 熱力圖用電等級色彩系統 */
+.level-0    { --hm-bg: #ebedf0; } /* 0度：中性灰，明確表示無資料 */
+.level-1    { --hm-bg: #93c5fd; } /* 0.1 - 3度：飽和淺藍，與灰色有明顯色相差距 */
+.level-2    { --hm-bg: #60a5fa; } /* 3.1 - 7度：中藍 */
+.level-3    { --hm-bg: #3b82f6; } /* 7.1 - 12度：藍 */
+.level-4    { --hm-bg: #1d4ed8; } /* 12.1 - 20度：深藍 */
+.level-over { --hm-bg: #dc3545; } /* > 20度：紅色警告 */
+
+/* 圖例方格 */
+.heatmap-legend {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    background-color: var(--hm-bg);
+    display: inline-block;
+}
+
+/* 虛線底邊分隔，用於多個房間熱力圖排列 */
+.border-bottom-dashed {
+    border-bottom: 1px dashed #dee2e6;
+}
+.border-bottom-dashed:last-child {
+    border-bottom: none;
+}
+</style>
+
+<div class="card shadow-sm mb-4" id="heatmapCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0"><i class="bi bi-calendar3"></i> 年度每日用電熱力圖 (最近 365 天)</h6>
+            <div class="text-muted small" style="font-size: 0.72rem;">顏色越深代表當天用電度數越多 (灰色為無用電，紅色為高耗電警告)</div>
+        </div>
+        <span class="badge bg-secondary-subtle text-secondary-emphasis font-monospace" id="heatmapRoomLabel">整體</span>
+    </div>
+    <div class="card-body">
+        <div class="heatmap-wrapper">
+            <!-- 由 JS 動態渲染月份標籤與各房間熱力網格 -->
+        </div>
+        
+        <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top flex-wrap gap-2">
+            <div class="small text-muted" style="font-size: 0.75rem;">
+                <i class="bi bi-info-circle"></i> <strong>小提示：</strong> 點擊任何方格可鎖定顯示該日期的詳細用電。
+            </div>
+            <div class="d-flex align-items-center gap-1 small text-muted" style="font-size: 0.75rem;">
+                <span>用電量：</span>
+                <div class="heatmap-legend level-0" title="0度"></div>
+                <div class="heatmap-legend level-1" title="0.1 ~ 3度"></div>
+                <div class="heatmap-legend level-2" title="3.1 ~ 7度"></div>
+                <div class="heatmap-legend level-3" title="7.1 ~ 12度"></div>
+                <div class="heatmap-legend level-4" title="12.1 ~ 20度"></div>
+                <div class="heatmap-legend level-over" title="> 20度警告"></div>
+                <span class="ms-1">（少 ➔ 多）</span>
+            </div>
+        </div>
+        
+        <div id="heatmapSelectedDetail" class="alert mt-2 py-2 px-3 small border d-none" style="font-size: 0.8rem;">
+            <!-- 由 JS 點擊時填入詳細資訊 -->
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <!-- Card-Based Recent Records -->
     <div class="col-12">
@@ -1420,6 +1541,179 @@ document.addEventListener('DOMContentLoaded', function() {
         summaryMax.textContent = `單日最高：${summary.max_kwh ?? '--'} kWh`;
     }
 
+    function getHeatmapLevelClass(kwh) {
+        if (kwh === null || kwh === undefined || kwh <= 0.01) return 'level-0';
+        if (kwh <= 3.0) return 'level-1';
+        if (kwh <= 7.0) return 'level-2';
+        if (kwh <= 12.0) return 'level-3';
+        if (kwh <= 20.0) return 'level-4';
+        return 'level-over';
+    }
+
+    function renderHeatmap(data) {
+        const wrapper = document.querySelector('.heatmap-wrapper');
+        if (!wrapper) return;
+        
+        wrapper.innerHTML = '';
+
+        const today = new Date();
+        const dates = [];
+        for (let i = 364; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(today.getDate() - i);
+            dates.push(d);
+        }
+
+        const firstDate = dates[0];
+        const firstWeekday = (firstDate.getDay() + 6) % 7; // 0=Mon, 6=Sun
+
+        // 1. Calculate Month positions for the shared header
+        let currentColumn = 1;
+        const monthPositions = {};
+        dates.forEach((d, idx) => {
+            const weekday = (d.getDay() + 6) % 7;
+            const monthNum = d.getMonth() + 1;
+            const monthName = monthNum + "月";
+
+            if (d.getDate() === 1 || idx === 0) {
+                if (!monthPositions[monthName]) {
+                    monthPositions[monthName] = currentColumn;
+                }
+            }
+            if (weekday === 6) {
+                currentColumn++;
+            }
+        });
+
+        // 2. Helper to create Month Header
+        function createMonthHeader() {
+            const header = document.createElement('div');
+            header.className = 'heatmap-months-labels';
+            for (const [monthName, colIndex] of Object.entries(monthPositions)) {
+                const labelDiv = document.createElement('div');
+                labelDiv.style.gridColumnStart = colIndex;
+                labelDiv.textContent = monthName;
+                header.appendChild(labelDiv);
+            }
+            return header;
+        }
+
+        // 3. Helper to render a single Grid for a specific room dataset
+        function renderSingleGrid(roomName, dailyUsageArray) {
+            const roomContainer = document.createElement('div');
+            roomContainer.className = 'mb-1 pt-2 pb-2 border-bottom-dashed';
+
+            const titleRow = document.createElement('div');
+            titleRow.className = 'd-flex align-items-center mb-1';
+            titleRow.innerHTML = `<span style="font-size:0.75rem;font-weight:600;color:#6c757d;letter-spacing:0.03em"><i class="bi bi-house-door text-primary me-1"></i>${roomName}</span>`;
+            roomContainer.appendChild(titleRow);
+
+            roomContainer.appendChild(createMonthHeader());
+
+            const gridRow = document.createElement('div');
+            gridRow.className = 'd-flex align-items-start gap-2';
+
+            const weekdays = document.createElement('div');
+            weekdays.className = 'heatmap-weekdays';
+            weekdays.innerHTML = '<div>一</div><div></div><div>三</div><div></div><div>五</div><div></div><div>日</div>';
+            gridRow.appendChild(weekdays);
+
+            const grid = document.createElement('div');
+            grid.className = 'heatmap-grid';
+
+            // Pad the first week
+            for (let p = 0; p < firstWeekday; p++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = 'heatmap-day';
+                emptyCell.style.visibility = 'hidden';
+                grid.appendChild(emptyCell);
+            }
+
+            // Create lookup map
+            const usageMap = {};
+            if (dailyUsageArray) {
+                if (data.labels) {
+                    for (let i = 0; i < data.labels.length; i++) {
+                        usageMap[data.labels[i]] = dailyUsageArray[i];
+                    }
+                }
+            }
+
+            // Fill day cells
+            dates.forEach((d) => {
+                const weekday = (d.getDay() + 6) % 7;
+                const year = d.getFullYear();
+                const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+                const dayStr = String(d.getDate()).padStart(2, '0');
+                const dateStr = `${year}-${monthStr}-${dayStr}`;
+
+                const kwh = usageMap[dateStr];
+                const levelClass = getHeatmapLevelClass(kwh);
+
+                const cell = document.createElement('div');
+                cell.className = `heatmap-day ${levelClass}`;
+                
+                let tooltipText = `${roomName} | ${dateStr}: ${kwh !== undefined ? kwh.toFixed(1) + ' 度' : '無資料'}`;
+                cell.setAttribute('data-bs-toggle', 'tooltip');
+                cell.setAttribute('data-bs-placement', 'top');
+                cell.setAttribute('title', tooltipText);
+
+                cell.addEventListener('click', function() {
+                    const detailBox = document.getElementById('heatmapSelectedDetail');
+                    if (detailBox) {
+                        detailBox.classList.remove('d-none');
+                        let displayVal = kwh !== undefined ? `<strong>${kwh.toFixed(1)}</strong> 度` : '無資料';
+                        let alertColorClass = kwh !== undefined && kwh > 20 ? 'alert-danger' : 'alert-info';
+                        
+                        detailBox.className = `alert mt-2 py-2 px-3 small border ${alertColorClass}`;
+                        detailBox.innerHTML = `📅 <strong>${roomName}</strong> | <strong>${dateStr}</strong> (星期${['一','二','三','四','五','六','日'][weekday]}) 用電：${displayVal}`;
+                    }
+                });
+
+                grid.appendChild(cell);
+            });
+
+            gridRow.appendChild(grid);
+            roomContainer.appendChild(gridRow);
+            return roomContainer;
+        }
+
+        // 4. Render according to Mode
+        if (data.mode === 'overall' && data.datasets && data.datasets.length > 0) {
+            const sorted = [...data.datasets].sort((a, b) => a.label.localeCompare(b.label, 'zh', {numeric: true}));
+            sorted.forEach(ds => {
+                wrapper.appendChild(renderSingleGrid(ds.label, ds.data));
+            });
+        } else {
+            // Single heatmap for selected room
+            const roomName = unitSelect.options[unitSelect.selectedIndex].text;
+            wrapper.appendChild(renderSingleGrid(roomName, data.usage));
+        }
+
+        // 5. Re-initialize Tooltips
+        const tooltipTriggerList = document.querySelectorAll('.heatmap-wrapper [data-bs-toggle="tooltip"]');
+        tooltipTriggerList.forEach(tooltipTriggerEl => {
+            new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    }
+
+    function loadHeatmap() {
+        const roomLabel = document.getElementById('heatmapRoomLabel');
+        if (roomLabel && unitSelect) {
+            roomLabel.textContent = unitSelect.options[unitSelect.selectedIndex].text;
+        }
+        const unitId = unitSelect.value;
+        fetch(`api/get_meter_chart.php?unit_id=${encodeURIComponent(unitId)}&range_days=365`)
+            .then(res => res.json())
+            .then(data => {
+                renderHeatmap(data);
+            })
+            .catch(err => {
+                console.error("Heatmap load error:", err);
+                renderHeatmap({ labels: [], usage: [] });
+            });
+    }
+
     function loadChart() {
         const unitId = unitSelect.value;
         const range = rangeSelect.value;
@@ -1438,8 +1732,13 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-    unitSelect.addEventListener('change', loadChart);
+    unitSelect.addEventListener('change', function() {
+        loadChart();
+        loadHeatmap();
+    });
     rangeSelect.addEventListener('change', loadChart);
+    
     loadChart();
+    loadHeatmap();
 });
 </script>
