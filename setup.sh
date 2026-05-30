@@ -160,7 +160,43 @@ sudo systemctl enable meter_monitor
 sudo systemctl start meter_monitor
 info "meter_monitor.service 已啟動"
 
-# ── 10. Cron ───────────────────────────────────────────────────────────────────
+# ── 10. udev rule（固定電表 USB-Serial 裝置名稱為 /dev/ttyMeter） ──────────────
+info "設定 udev rule..."
+UDEV_FILE="/etc/udev/rules.d/99-usb-serial.rules"
+
+if [ -f "$UDEV_FILE" ]; then
+    warn "$UDEV_FILE 已存在，略過"
+else
+    METER_SERIAL=""
+    for dev in /dev/ttyUSB*; do
+        [ -e "$dev" ] || continue
+        serial=$(udevadm info "$dev" 2>/dev/null | grep "ID_SERIAL_SHORT" | cut -d= -f2)
+        vendor=$(udevadm info "$dev" 2>/dev/null | grep "ID_VENDOR_ID" | cut -d= -f2)
+        if [ "$vendor" = "0403" ] && [ -n "$serial" ]; then
+            METER_SERIAL="$serial"
+            info "偵測到 FTDI 裝置：$dev，序號：$serial"
+            break
+        fi
+    done
+
+    if [ -z "$METER_SERIAL" ]; then
+        warn "未偵測到電表 USB 裝置（請確認已插上）"
+        read -p "請手動輸入 USB Serial 序號（可用 udevadm info /dev/ttyUSB0 查看）：" METER_SERIAL
+    fi
+
+    if [ -n "$METER_SERIAL" ]; then
+        sudo tee "$UDEV_FILE" > /dev/null << EOF
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="$METER_SERIAL", SYMLINK+="ttyMeter"
+EOF
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger
+        info "udev rule 已設定，裝置固定為 /dev/ttyMeter"
+    else
+        warn "序號為空，略過 udev rule 設定（之後可手動執行）"
+    fi
+fi
+
+# ── 11. Cron ───────────────────────────────────────────────────────────────────
 info "設定 cron..."
 CRON_JOB="0 0 * * * /usr/bin/php $RENT_DIR/cron/daily_meter_snapshot.php >> $RENT_DIR/cron/meter_snapshot.log 2>&1"
 ( crontab -l 2>/dev/null | grep -v "daily_meter_snapshot"; echo "$CRON_JOB" ) | crontab -
