@@ -919,7 +919,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
                                                             <span class="text-muted">-</span>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td>
+                                                    <td class="d-flex align-items-center gap-1">
                                                         <?php if ($h['record_type'] === 'closing'): ?>
                                                             <span class="badge bg-danger-subtle text-danger">結算</span>
                                                         <?php elseif ($h['record_type'] === 'manual'): ?>
@@ -927,6 +927,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
                                                         <?php elseif ($h['record_type'] === 'daily'): ?>
                                                             <span class="badge bg-info-subtle text-info">自動</span>
                                                         <?php endif; ?>
+                                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="openEditModal(<?= $h['id'] ?>, '<?= htmlspecialchars($unit['name']) ?>', '<?= $h['record_date'] ?>', <?= $h['reading_value'] ?>)" title="編輯"><i class="bi bi-pencil"></i></button>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
@@ -937,7 +938,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
                             
                             <?php if ($totalCount > 10): ?>
                                 <div class="text-center mt-2" id="loadmore-<?= $unit['id'] ?>">
-                                    <button class="btn btn-sm btn-outline-secondary" onclick="loadMoreHistory(<?= $unit['id'] ?>)">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="loadMoreHistory(<?= $unit['id'] ?>, '<?= htmlspecialchars($unit['name'], ENT_QUOTES) ?>')">
                                         <i class="bi bi-chevron-down"></i> 載入更多
                                     </button>
                                 </div>
@@ -1007,9 +1008,12 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
                         <input type="number" step="0.1" class="form-control form-control-lg" name="reading_value" id="editValue" required>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-primary">確認儲存</button>
+                <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-outline-danger" onclick="deleteReading()">刪除</button>
+                    <div>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">確認儲存</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -1017,7 +1021,20 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
 </div>
 
 <script>
-    function openEditModal(id, unit, date, value) {
+    const BATCH_API_KEY = <?= json_encode(sc_API_KEY) ?>;
+
+    function deleteReading() {
+        const id = document.getElementById('editId').value;
+        const label = document.getElementById('editUnitDate').value;
+        if (!confirm(`確定要刪除「${label}」的電表紀錄嗎？此操作無法復原。`)) return;
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.innerHTML = `<input name="action" value="delete_reading"><input name="id" value="${id}">`;
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+        function openEditModal(id, unit, date, value) {
         document.getElementById('editId').value = id;
         document.getElementById('editUnitDate').value = unit + ' (' + date + ')';
         document.getElementById('editValue').value = value;
@@ -1046,7 +1063,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
     }
     
     // Load more history records
-    function loadMoreHistory(unitId) {
+    function loadMoreHistory(unitId, unitName) {
         const tbody = document.getElementById(`history-tbody-${unitId}`);
         const currentCount = tbody.querySelectorAll('tr').length;
         const totalSpan = document.getElementById(`total-${unitId}`);
@@ -1070,7 +1087,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
                         <td class="small">${h.record_date}</td>
                         <td>${parseFloat(h.reading_value).toFixed(2)}</td>
                         <td>${diffBadge}</td>
-                        <td>${sourceLabel}</td>
+                        <td class="d-flex align-items-center gap-1">${sourceLabel}<button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="openEditModal(${h.id}, '${unitName}', '${h.record_date}', ${h.reading_value})" title="編輯"><i class="bi bi-pencil"></i></button></td>
                     </tr>`;
                 });
                 
@@ -1325,7 +1342,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
         fetch('api/save_reading_batch.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({readings: list})
+            body: JSON.stringify({api_key: BATCH_API_KEY, readings: list})
         })
         .then(r => r.json())
         .then(res => {
