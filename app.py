@@ -15,7 +15,7 @@ CORS(app)
 
 DB_PATH      = "/home/rpi/flask_web/meter_data.db"
 TEMP_DB_PATH = "/home/rpi/flask_web/temp_data.db"
-PORT = "/dev/ttyUSB0"
+PORT = "/dev/ttyMeter"
 BAUD = 2400
 
 ROOM_MAP = {1: "303室", 2: "403室", 3: "402室", 4: "401室", 5: "302室", 6: "301室"}
