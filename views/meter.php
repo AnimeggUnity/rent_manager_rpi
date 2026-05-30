@@ -127,6 +127,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } catch (Exception $e) { $pdo->rollBack(); $message = '<div class="alert alert-danger">刪除失敗: ' . $e->getMessage() . '</div>'; }
 }
 
+// Handle Batch Delete by Date Range
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_readings_range') {
+    $unit_id    = isset($_POST['unit_id']) ? (int)$_POST['unit_id'] : 0;
+    $start_date = $_POST['start_date'] ?? '';
+    $end_date   = $_POST['end_date']   ?? '';
+
+    if (!$start_date || !$end_date || $start_date > $end_date) {
+        $message = '<div class="alert alert-danger">請選擇有效的日期區間。</div>';
+    } else {
+        $pdo = DB::connect();
+        try {
+            $pdo->beginTransaction();
+
+            if ($unit_id > 0) {
+                $unit_ids = [$unit_id];
+            } else {
+                $rows = $pdo->query("SELECT DISTINCT unit_id FROM electricity_readings")->fetchAll();
+                $unit_ids = array_column($rows, 'unit_id');
+            }
+
+            $deleted = 0;
+            foreach ($unit_ids as $uid) {
+                // 找刪除區間後的第一筆，重算其 diff_value
+                $stmt = $pdo->prepare("SELECT id, reading_value FROM electricity_readings WHERE unit_id = ? AND record_date > ? ORDER BY record_date ASC LIMIT 1");
+                $stmt->execute([$uid, $end_date]);
+                $nextRow = $stmt->fetch();
+
+                if ($nextRow) {
+                    $stmt = $pdo->prepare("SELECT reading_value FROM electricity_readings WHERE unit_id = ? AND record_date < ? ORDER BY record_date DESC LIMIT 1");
+                    $stmt->execute([$uid, $start_date]);
+                    $prevRow = $stmt->fetch();
+                    $new_diff = $prevRow ? ($nextRow['reading_value'] - $prevRow['reading_value']) : 0;
+                    $pdo->prepare("UPDATE electricity_readings SET diff_value = ? WHERE id = ?")->execute([$new_diff, $nextRow['id']]);
+                }
+
+                $stmt = $pdo->prepare("DELETE FROM electricity_readings WHERE unit_id = ? AND record_date BETWEEN ? AND ?");
+                $stmt->execute([$uid, $start_date, $end_date]);
+                $deleted += $stmt->rowCount();
+            }
+
+            $pdo->commit();
+            $message = "<div class=\"alert alert-success\">已刪除 {$deleted} 筆紀錄。</div>";
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $message = '<div class="alert alert-danger">刪除失敗：' . $e->getMessage() . '</div>';
+        }
+    }
+}
+
 // Handle Delete Utility Bill
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_utility_bill') {
     $billId = isset($_POST['bill_id']) ? (int)$_POST['bill_id'] : 0;
@@ -476,6 +525,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
     </div>
 </details>
 
+
 <div class="row g-3 mb-4">
     <div class="col-lg-4">
         <div class="card shadow-sm h-100">
@@ -812,7 +862,12 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="mb-0"><i class="bi bi-speedometer2"></i> 各房源電表紀錄</h4>
-            <span class="text-muted small">點擊卡片查看詳細歷史</span>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-muted small">點擊卡片查看詳細歷史</span>
+                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#batchDeleteModal">
+                    <i class="bi bi-trash"></i> 批次刪除
+                </button>
+            </div>
         </div>
         
         <div class="row g-3">
@@ -1020,8 +1075,55 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
     </div>
 </div>
 
+<div class="modal fade" id="batchDeleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger"><i class="bi bi-trash"></i> 批次刪除電表讀數</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" onsubmit="return confirmBatchDelete(this)">
+                <input type="hidden" name="action" value="delete_readings_range">
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">用於即時監測中斷後，批次清除該段期間的異常紀錄。刪除後會自動修正相鄰差值。</p>
+                    <div class="mb-3">
+                        <label class="form-label">房間</label>
+                        <select class="form-select" name="unit_id">
+                            <option value="0">全部房間</option>
+                            <?php foreach ($units as $u): ?>
+                                <option value="<?= $u['id'] ?>"><?= htmlspecialchars($u['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">起始日期</label>
+                            <input type="date" class="form-control" name="start_date" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">結束日期</label>
+                            <input type="date" class="form-control" name="end_date" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash"></i> 確認刪除</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
     const BATCH_API_KEY = <?= json_encode(sc_API_KEY) ?>;
+
+    function confirmBatchDelete(form) {
+        const unit = form.unit_id.options[form.unit_id.selectedIndex].text;
+        const start = form.start_date.value;
+        const end   = form.end_date.value;
+        return confirm(`確定要刪除「${unit}」${start} 至 ${end} 的所有電表讀數嗎？\n此操作無法復原。`);
+    }
 
     function deleteReading() {
         const id = document.getElementById('editId').value;
