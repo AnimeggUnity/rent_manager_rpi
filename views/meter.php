@@ -1,6 +1,9 @@
 <?php
 // Handle Record Submission
 $message = '';
+if (!empty($_GET['flash'])) {
+    $message = '<div class="alert alert-success">' . htmlspecialchars($_GET['flash']) . '</div>';
+}
 
 // Export readings to CSV
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'export_readings') {
@@ -93,7 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
         $pdo->commit();
-        $message = '<div class="alert alert-success">紀錄已修正。</div>';
+        header('Location: index.php?p=meter&flash=' . urlencode('紀錄已修正。'));
+        exit;
     } catch (Exception $e) { $pdo->rollBack(); $message = '<div class="alert alert-danger">修正失敗: ' . $e->getMessage() . '</div>'; }
 }
 
@@ -123,7 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $pdo->prepare("DELETE FROM electricity_readings WHERE id = ?")->execute([$id]);
         }
         $pdo->commit();
-        $message = '<div class="alert alert-success">紀錄已刪除。</div>';
+        header('Location: index.php?p=meter&flash=' . urlencode('紀錄已刪除。'));
+        exit;
     } catch (Exception $e) { $pdo->rollBack(); $message = '<div class="alert alert-danger">刪除失敗: ' . $e->getMessage() . '</div>'; }
 }
 
@@ -168,7 +173,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             $pdo->commit();
-            $message = "<div class=\"alert alert-success\">已刪除 {$deleted} 筆紀錄。</div>";
+            header('Location: index.php?p=meter&flash=' . urlencode("已刪除 {$deleted} 筆紀錄。"));
+            exit;
         } catch (Exception $e) {
             $pdo->rollBack();
             $message = '<div class="alert alert-danger">刪除失敗：' . $e->getMessage() . '</div>';
