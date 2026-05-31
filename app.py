@@ -394,6 +394,26 @@ def get_history(unit_id):
                 """, (unit_id,)).fetchall()
 
         data = {r[0]: (round(r[1], 3), r[2]) for r in db_rows}
+
+        # 加入 buffer 裡尚未 flush 的資料（僅限今天）
+        today = datetime.now().strftime("%Y-%m-%d")
+        if not target_date or target_date == today:
+            buf_by_hour = {}
+            with buffer_lock:
+                buf_rows = list(write_buffer)
+            for (mid, rt, kwh_val, w, st, bal) in buf_rows:
+                if mid != unit_id or not rt.startswith(today):
+                    continue
+                hr = rt[11:13]
+                if hr not in buf_by_hour:
+                    buf_by_hour[hr] = {"usage": 0.0, "kwh": kwh_val}
+                if w is not None and w >= 0:
+                    buf_by_hour[hr]["usage"] += w / 6000.0
+                buf_by_hour[hr]["kwh"] = max(buf_by_hour[hr]["kwh"], kwh_val)
+            for hr, vals in buf_by_hour.items():
+                if hr not in data:
+                    data[hr] = (round(vals["usage"], 3), vals["kwh"])
+
         labels = [f"{h:02d}:00" for h in range(24)]
         usage  = [data[f"{h:02d}"][0] if f"{h:02d}" in data else 0 for h in range(24)]
         kwh    = [data[f"{h:02d}"][1] if f"{h:02d}" in data else None for h in range(24)]
