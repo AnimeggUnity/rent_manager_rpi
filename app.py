@@ -299,7 +299,8 @@ def recorder():
                     prev_kwh[mid] = d["kwh"]
                     write_buffer.append((mid, record_time, d["kwh"], watts, d["status"], d["balance"]))
 
-            flush_to_db()
+            if len(write_buffer) >= BUFFER_FLUSH_SIZE:
+                flush_to_db()
 
             # 記錄溫度
             temp = read_cpu_temp()
