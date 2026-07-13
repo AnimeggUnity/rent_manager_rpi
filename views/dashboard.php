@@ -5,19 +5,20 @@ $this_month_prefix = date('Y-m-');
 
 // Fetch active tenants and their billing days
 $active_tenants = $pdo->query("
-    SELECT t.name as tenant_name, t.unit_id, t.billing_cycle_day, u.name as unit_name 
-    FROM tenants t 
-    JOIN units u ON t.unit_id = u.id 
+    SELECT t.id as tenant_id, t.name as tenant_name, t.unit_id, t.billing_cycle_day, u.name as unit_name
+    FROM tenants t
+    JOIN units u ON t.unit_id = u.id
     WHERE t.is_active = 1 AND u.is_active = 1
 ")->fetchAll();
 
 $missing_readings = [];
+$pending_bills = [];
 foreach ($active_tenants as $t) {
     // Construct the expected billing date for this month
     // Ensure day is valid for this month (e.g. 31st in Feb)
-    $day = min((int)$t['billing_cycle_day'], (int)date('t')); 
+    $day = min((int)$t['billing_cycle_day'], (int)date('t'));
     $expected_date = $this_month_prefix . str_pad($day, 2, '0', STR_PAD_LEFT);
-    
+
     if ($today >= $expected_date) {
         // Check if a reading exists on or after this date (or just for this month's cycle)
         $stmt = $pdo->prepare("SELECT id FROM electricity_readings WHERE unit_id = ? AND record_date >= ? LIMIT 1");
@@ -25,6 +26,18 @@ foreach ($active_tenants as $t) {
         if (!$stmt->fetch()) {
             $missing_readings[] = [
                 'unit_id' => $t['unit_id'],
+                'unit_name' => $t['unit_name'],
+                'tenant_name' => $t['tenant_name'],
+                'expected_date' => $expected_date
+            ];
+        }
+
+        // Check if a bill has already been issued for this cycle
+        $stmt = $pdo->prepare("SELECT id FROM ledger WHERE tenant_id = ? AND ref_type = 'bill' AND trans_date >= ? LIMIT 1");
+        $stmt->execute([$t['tenant_id'], $expected_date]);
+        if (!$stmt->fetch()) {
+            $pending_bills[] = [
+                'tenant_id' => $t['tenant_id'],
                 'unit_name' => $t['unit_name'],
                 'tenant_name' => $t['tenant_name'],
                 'expected_date' => $expected_date
@@ -62,6 +75,25 @@ foreach ($active_tenants as $t) {
                 <a href="index.php?p=quick_meter" class="btn btn-sm btn-warning fw-bold">
                     <i class="bi bi-lightning-charge"></i> 前往抄表
                 </a>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
+
+<?php if (!empty($pending_bills)): ?>
+    <div class="alert alert-info shadow-sm border-start border-4 border-info mb-4" role="alert">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-receipt fs-4 me-3"></i>
+            <div>
+                <h6 class="alert-heading fw-bold mb-1">待開立帳單：以下房源已過計費日</h6>
+                <p class="mb-2 small">點擊房源直接前往開立帳單頁面（金額已自動預填）：</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <?php foreach ($pending_bills as $b): ?>
+                        <a href="index.php?p=billing&tenant_id=<?= $b['tenant_id'] ?>" class="badge bg-white text-dark border border-info-subtle text-decoration-none">
+                            <?= htmlspecialchars($b['unit_name']) ?> (<?= htmlspecialchars($b['tenant_name']) ?>) - 計費日: <?= substr($b['expected_date'], 5) ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
             </div>
         </div>
     </div>
