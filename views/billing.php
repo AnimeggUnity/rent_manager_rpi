@@ -97,9 +97,10 @@ $tenants = DB::connect()->query("
                         <select class="form-select" id="tenantSelect" name="tenant_id" required onchange="loadTenantDetails(this)">
                             <option value="">-- 請選擇 --</option>
                             <?php foreach ($tenants as $t): ?>
-                                <option value="<?= $t['id'] ?>" 
-                                    data-unit-id="<?= $t['unit_id'] ?>" 
+                                <option value="<?= $t['id'] ?>"
+                                    data-unit-id="<?= $t['unit_id'] ?>"
                                     data-rent="<?= $t['base_rent'] ?>"
+                                    data-billing-day="<?= (int)$t['billing_cycle_day'] ?>"
                                 >
                                     <?= htmlspecialchars($t['unit_name']) ?> - <?= htmlspecialchars($t['name']) ?>
                                 </option>
@@ -188,31 +189,50 @@ $tenants = DB::connect()->query("
 
         const unitId = option.getAttribute('data-unit-id');
         const rent = option.getAttribute('data-rent');
+        const billingDay = parseInt(option.getAttribute('data-billing-day')) || 1;
 
         document.getElementById('unitIdField').value = unitId;
         document.getElementById('rentAmountField').value = rent;
-        
+
+        // 算出本期正常的計費日（不是今天操作的日期）。
+        // 如果管理者是晚幾天才回來開帳單，結算點應該預設抓「計費日當天或之前」最新的讀數，
+        // 而不是抓「操作當下」最新的讀數，否則電費會多算到管理者晚開帳單的那幾天。
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const cycleDay = Math.min(billingDay, lastDayOfMonth);
+        const expectedDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(cycleDay)}`;
+        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        const targetDate = todayStr >= expectedDate ? expectedDate : null; // 還沒到計費日就維持抓最新一筆
+
         // Fetch readings via simple fetch to a new API endpoint we will create inline or separate
         fetch(`api/get_readings.php?unit_id=${unitId}`)
             .then(response => response.json())
             .then(data => {
                 const startSelect = document.getElementById('startReadingSelect');
                 const endSelect = document.getElementById('endReadingSelect');
-                
+
                 // Reset
                 startSelect.innerHTML = '<option value="">-- 選擇起算度數 --</option>';
                 endSelect.innerHTML = '<option value="">-- 選擇結算度數 --</option>';
 
+                // 預設結算點：計費日當天或之前最新一筆；還沒到計費日則沿用最新一筆
+                let defaultEndId = data.length > 0 ? data[0].id : null;
+                if (targetDate) {
+                    const onOrBefore = data.find(r => r.record_date <= targetDate);
+                    if (onOrBefore) defaultEndId = onOrBefore.id;
+                }
+
                 let lastClosingId = null;
-                data.forEach((r, index) => {
+                data.forEach((r) => {
                     const text = `${r.record_date} (${r.reading_value}) ${r.record_type === 'closing' ? '[結算點]' : ''}`;
-                    
+
                     // Add to Start (Previous)
                     startSelect.add(new Option(text, r.id));
-                    
+
                     // Add to End (Current)
-                    endSelect.add(new Option(text, r.id, false, index === 0)); // Default latest as end
-                    
+                    endSelect.add(new Option(text, r.id, false, r.id === defaultEndId));
+
                     if (r.record_type === 'closing' && lastClosingId === null) {
                         lastClosingId = r.id;
                     }
