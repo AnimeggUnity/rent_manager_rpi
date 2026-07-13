@@ -88,7 +88,7 @@ $tenants = DB::connect()->query("
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label class="form-label h6">帳單歸屬日期</label>
-                                <input type="date" class="form-control" name="bill_date" value="<?= date('Y-m-d') ?>" required>
+                                <input type="date" class="form-control" id="billDateField" name="bill_date" value="<?= date('Y-m-d') ?>" required>
                                 <div class="form-text">這將決定帳單顯示在報表上的月份。</div>
                             </div>
                         </div>
@@ -195,6 +195,7 @@ $tenants = DB::connect()->query("
         document.getElementById('rentAmountField').value = rent;
 
         // 算出本期正常的計費日（不是今天操作的日期）。
+        // 帳單歸屬日期跟結算讀數共用同一套判斷：計費日已過就用計費日，還沒到就用今天。
         // 如果管理者是晚幾天才回來開帳單，結算點應該預設抓「計費日當天或之前」最新的讀數，
         // 而不是抓「操作當下」最新的讀數，否則電費會多算到管理者晚開帳單的那幾天。
         const now = new Date();
@@ -204,6 +205,7 @@ $tenants = DB::connect()->query("
         const expectedDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(cycleDay)}`;
         const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
         const targetDate = todayStr >= expectedDate ? expectedDate : null; // 還沒到計費日就維持抓最新一筆
+        document.getElementById('billDateField').value = targetDate || todayStr;
 
         // Fetch readings via simple fetch to a new API endpoint we will create inline or separate
         fetch(`api/get_readings.php?unit_id=${unitId}`)
