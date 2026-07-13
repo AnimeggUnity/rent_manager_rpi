@@ -32,11 +32,20 @@ $tenants = $pdo->query("
     JOIN units u ON t.unit_id = u.id 
     WHERE t.is_active = 1
 ")->fetchAll();
-$months = [date('Y-m'), date('Y-m', strtotime('+1 month'))];
+$range_start = isset($_GET['start']) ? $_GET['start'] : date('Y-m-01');
+$range_end   = isset($_GET['end'])   ? $_GET['end']   : date('Y-m-t', strtotime('+1 month'));
+
+$months = [];
+$cursor = new DateTime(substr($range_start, 0, 7) . '-01');
+$end_dt = new DateTime(substr($range_end,   0, 7) . '-01');
+while ($cursor <= $end_dt) {
+    $months[] = $cursor->format('Y-m');
+    $cursor->modify('+1 month');
+}
 
 foreach ($tenants as $t) {
     if (!$t['billing_cycle_day']) continue;
-    
+
     foreach ($months as $m) {
         // Construct date: YYYY-MM-DD
         $day = sprintf('%02d', $t['billing_cycle_day']);

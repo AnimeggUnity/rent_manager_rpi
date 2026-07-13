@@ -162,7 +162,17 @@ $assets = $assets_stmt->fetchAll();
                         $lastClosing->execute([$tenant['unit_id']]);
                         $closingData = $lastClosing->fetch();
                         $sinceClosing = $closingData ? ($latest['reading_value'] - $closingData['reading_value']) : null;
-                        
+
+                        // 本期所有記錄：從上次結算日起（無結算記錄則從合約起始日）
+                        $sinceDate = $closingData ? $closingData['record_date'] : $contract_start;
+                        $periodRecords = $pdo->prepare("
+                            SELECT * FROM electricity_readings
+                            WHERE unit_id = ? AND record_date >= ?
+                            ORDER BY record_date DESC
+                        ");
+                        $periodRecords->execute([$tenant['unit_id'], $sinceDate]);
+                        $periodRecords = $periodRecords->fetchAll();
+
                         // 預估電費（假設每度 5 元，可從設定讀取）
                         $pricePerUnit = 5; // TODO: 從系統設定讀取
                         $estimatedCost = $monthlyUsage * $pricePerUnit;
@@ -197,29 +207,37 @@ $assets = $assets_stmt->fetchAll();
                         <?php endif; ?>
                         
                         <div class="mt-3">
-                            <div class="small fw-semibold text-muted mb-2">
-                                <i class="bi bi-clock-history me-1"></i> 最近 5 筆記錄
+                            <div class="small fw-semibold text-muted mb-1">
+                                <i class="bi bi-clock-history me-1"></i> 本期用電記錄（<?= $sinceDate ?> 起，共 <?= count($periodRecords) ?> 筆）
                             </div>
-                            <div class="list-group list-group-flush small">
-                                <?php foreach (array_slice($readings, 0, 5) as $r): ?>
-                                    <div class="list-group-item d-flex justify-content-between align-items-center bg-transparent px-0">
-                                        <div>
-                                            <div class="text-muted"><?= $r['record_date'] ?></div>
-                                            <div class="small text-secondary">
-                                                當日用量：
-                                                <?php if (isset($r['diff_value']) && $r['diff_value'] !== null): ?>
-                                                    <?= number_format((float)$r['diff_value'], 2) ?> 度
-                                                <?php else: ?>
-                                                    -
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                        <span class="fw-bold"><?= number_format($r['reading_value'], 2) ?> 度</span>
-                                        <?php if ($r['record_type'] === 'closing'): ?>
-                                            <span class="badge bg-danger-subtle text-danger">已結算</span>
-                                        <?php endif; ?>
-                                    </div>
-                                <?php endforeach; ?>
+                            <?php
+                                $half = (int)ceil(count($periodRecords) / 2);
+                                $col1 = array_slice($periodRecords, 0, $half);
+                                $col2 = array_slice($periodRecords, $half);
+                                $renderRows = function($rows) {
+                                    foreach ($rows as $r) {
+                                        $cls = $r['record_type'] === 'closing' ? 'table-danger' : '';
+                                        $diff = $r['diff_value'] !== null ? '+'.number_format((float)$r['diff_value'], 1) : '-';
+                                        $badge = $r['record_type'] === 'closing' ? ' <span class="badge bg-danger-subtle text-danger">結算</span>' : '';
+                                        echo "<tr class=\"$cls\">
+                                            <td class=\"text-muted ps-0\">{$r['record_date']}</td>
+                                            <td class=\"text-end\">{$diff}</td>
+                                            <td class=\"text-end fw-bold\">" . number_format($r['reading_value'], 1) . "{$badge}</td>
+                                        </tr>";
+                                    }
+                                };
+                            ?>
+                            <div class="row g-0" style="font-size:0.78rem">
+                                <div class="col-6 pe-1">
+                                    <table class="table table-sm table-borderless mb-0 w-100">
+                                        <tbody><?php $renderRows($col1); ?></tbody>
+                                    </table>
+                                </div>
+                                <div class="col-6 ps-1 border-start">
+                                    <table class="table table-sm table-borderless mb-0 w-100">
+                                        <tbody><?php $renderRows($col2); ?></tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     <?php else: ?>
