@@ -344,7 +344,7 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
 
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">電表紀錄</h1>
-    <a href="/meter" target="_blank" class="btn btn-outline-primary btn-sm">
+    <a href="<?= htmlspecialchars(meter_monitor_url()) ?>" target="_blank" class="btn btn-outline-primary btn-sm">
         <i class="bi bi-speedometer2 me-1"></i> 即時電錶監控
     </a>
 </div>

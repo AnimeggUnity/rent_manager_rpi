@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/platform.php';
 
 date_default_timezone_set('Asia/Taipei');
 
@@ -21,8 +22,8 @@ const METER_TO_UNIT = [
 $record_date = date('Y-m-d');
 $log_prefix  = "[" . date('Y-m-d H:i:s') . "] ";
 
-// 從 Flask API 取得即時度數
-$json = @file_get_contents('http://127.0.0.1:5001/api/status');
+// 從 Flask API 取得即時度數（RPi: 127.0.0.1；Docker: rent_meter）
+$json = @file_get_contents(flask_api_base_url() . '/api/status');
 if ($json === false) {
     echo $log_prefix . "ERROR: 無法連接 Flask API\n";
     exit(1);
