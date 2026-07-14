@@ -35,6 +35,10 @@
         </div>
     </div>
 
+    <div style="height:110px;position:relative;margin-bottom:10px;">
+        <canvas id="r5-temp-chart"></canvas>
+    </div>
+
     <div class="mb-2">
         <div class="d-flex justify-content-between mb-1">
             <span class="text-muted">CPU 負載</span>
@@ -68,6 +72,8 @@
 
 <script>
 (function () {
+    let r5TempChart = null;
+
     function setBar(id, pct) {
         const el = document.getElementById(id);
         if (el) el.style.width = Math.min(100, Math.max(0, pct || 0)) + '%';
@@ -144,7 +150,59 @@
         }).catch(() => {});
     }
 
+    function fetchR5TempChart() {
+        // R5S/Docker：經 api/temp_chart.php 伺服器端代理到 meter 容器，避免跨容器 CORS
+        fetch('/api/temp_chart.php').then(r => r.json()).then(data => {
+            if (!Array.isArray(data) || !data.length) return;
+            const labels = data.map(d => d.t.slice(11, 16));
+            const values = data.map(d => d.c);
+            const canvas = document.getElementById('r5-temp-chart');
+            if (!canvas) return;
+            if (r5TempChart) r5TempChart.destroy();
+            r5TempChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        borderColor: values[values.length - 1] >= 70 ? '#e53935' : '#fb8c00',
+                        backgroundColor: values[values.length - 1] >= 70 ? 'rgba(229,57,53,0.08)' : 'rgba(251,140,0,0.08)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: {
+                        callbacks: { label: ctx => ctx.parsed.y + '°C' }
+                    }},
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: '時間', font: { size: 8 }, color: '#aaa' },
+                            ticks: { font: { size: 8 }, maxTicksLimit: 4, maxRotation: 0, color: '#aaa' },
+                            grid: { display: false }
+                        },
+                        y: {
+                            display: true,
+                            title: { display: true, text: '°C', font: { size: 8 }, color: '#aaa' },
+                            suggestedMin: 40,
+                            suggestedMax: 85,
+                            ticks: { font: { size: 8 }, maxTicksLimit: 4, color: '#aaa', callback: v => v + '°' },
+                            grid: { color: 'rgba(0,0,0,0.04)' }
+                        }
+                    }
+                }
+            });
+        }).catch(() => {});
+    }
+
     fetchR5SysInfo();
+    fetchR5TempChart();
     setInterval(fetchR5SysInfo, 10000);
+    setInterval(fetchR5TempChart, 600000);
 })();
 </script>
