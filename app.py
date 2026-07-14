@@ -1,6 +1,7 @@
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime
 from flask_cors import CORS
+import os
 import serial
 import struct
 import sqlite3
@@ -13,9 +14,12 @@ from collections import deque
 app = Flask(__name__)
 CORS(app)
 
-DB_PATH      = "/home/rpi/flask_web/meter_data.db"
-TEMP_DB_PATH = "/home/rpi/flask_web/temp_data.db"
-PORT = "/dev/ttyMeter"
+# R5S/Docker：容器內用 /app（compose 掛載）+ /dev/ttyUSB0（無 udev，抓不到穩定別名）
+# RPi 裸機：沿用原本家目錄路徑 + /dev/ttyMeter（udev 綁定 USB 序號的穩定別名）
+_IN_DOCKER = os.path.exists('/.dockerenv')
+DB_PATH      = "/app/meter_data.db" if _IN_DOCKER else "/home/rpi/flask_web/meter_data.db"
+TEMP_DB_PATH = "/app/temp_data.db" if _IN_DOCKER else "/home/rpi/flask_web/temp_data.db"
+PORT = "/dev/ttyUSB0" if _IN_DOCKER else "/dev/ttyMeter"
 BAUD = 2400
 
 ROOM_MAP = {1: "303室", 2: "403室", 3: "402室", 4: "401室", 5: "302室", 6: "301室"}
