@@ -747,7 +747,12 @@ function estimateNextBill($pdo)
 <?php if ($nextBillEstimate): ?>
 <div class="card shadow-sm mb-4 border-info-subtle">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h6 class="mb-0"><i class="bi bi-graph-up-arrow"></i> 下期帳單粗估</h6>
+        <h6 class="mb-0">
+            <i class="bi bi-graph-up-arrow"></i> 下期帳單粗估
+            <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-1" style="vertical-align:2px;" data-bs-toggle="modal" data-bs-target="#nextBillEstimateInfoModal" title="這個估算怎麼算出來的？">
+                <i class="bi bi-question-circle"></i>
+            </button>
+        </h6>
         <span class="text-muted small">
             <?= $nextBillEstimate['used_seasonal'] ? htmlspecialchars($nextBillEstimate['season_label']) . '同季 ' : '全部 ' ?><?= $nextBillEstimate['sample_n'] ?> 期資料
         </span>
@@ -774,6 +779,46 @@ function estimateNextBill($pdo)
         </div>
         <div class="text-muted small mt-3 border-top pt-2">
             <i class="bi bi-info-circle"></i> 這是粗估，不是精準預測：只根據目前 <?= $nextBillEstimate['total_bill_n'] ?> 期歷史帳單推算，範圍會隨你之後每期登記新帳單自動變窄、變準；電價採歷史平均值換算，實際台電累進費率仍可能有落差。
+        </div>
+    </div>
+</div>
+
+<!-- Next Bill Estimate: Explanation Modal -->
+<div class="modal fade" id="nextBillEstimateInfoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-graph-up-arrow"></i> 下期帳單粗估怎麼算的？</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <p><strong>差額（公共用電）是什麼</strong><br>
+                每次台電來抄總表，度數通常會比 6 個房間分錶加起來還多，多出來的那一塊就是公共區域用電（走廊燈、電梯等），這裡叫「公共用電」。</p>
+
+                <p><strong>估算分成三步</strong></p>
+                <ol class="ps-3">
+                    <li class="mb-2">
+                        <strong>抓本期已知用量</strong><br>
+                        從上一張台電帳單的結束日隔天算到今天，把這段期間 6 個房間分錶的每日用量加總，得到「本期至今分錶累計」。
+                    </li>
+                    <li class="mb-2">
+                        <strong>推算整期會用多少</strong><br>
+                        因為這期還沒結束，用「至今累計 ÷ 已經過天數」算出每天平均用量，再乘上過去帳單的平均計費天數（目前約 59 天），推算出「這期分錶合計最終大概會是多少」。
+                    </li>
+                    <li class="mb-2">
+                        <strong>換算成總表度數跟金額</strong><br>
+                        用過去帳單算出的「公共用電佔比」平均值，回推總表度數：<code>總表度數 = 分錶用量 ÷ (1 − 公共用電佔比)</code>。再用過去「金額 ÷ 度數」算出的平均電價，換算成新台幣金額。
+                    </li>
+                </ol>
+
+                <p><strong>那個「高~低」範圍是怎麼來的</strong><br>
+                公共用電佔比、電價這兩個數字，用的是統計上的「標準誤差」抓出高低區間，不是隨便抓最大最小值。<strong>資料期數越多，這個範圍會自動變窄</strong>——你之後每登記一張新的台電帳單，下次打開這頁範圍就會自動跟著收斂，不用改任何設定。</p>
+
+                <p><strong>季節怎麼判斷</strong><br>
+                台電夏月（6~9月）跟非夏月電價、用電習慣不同。程式會先看現在是不是夏月，如果同季節已經累積到 <strong>3 期以上</strong>歷史帳單，就只用同季節的資料算平均，估得更準；資料不夠的季節就先用全部歷史資料的平均值，避免用太少樣本硬算出離譜的數字。</p>
+
+                <p class="text-muted mb-0"><i class="bi bi-exclamation-triangle"></i> 台電是累進費率（用越多、每度越貴），不是固定單價，這裡的「平均電價」只是把過去帳單金額除以度數算出來的混合值，跟真正的累進費率會有落差，僅供抓個大概方向參考。</p>
+            </div>
         </div>
     </div>
 </div>
