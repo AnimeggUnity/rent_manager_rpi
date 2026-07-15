@@ -225,6 +225,9 @@ $recentBills = $pdo->query("
     LIMIT 3
 ")->fetchAll();
 
+// 下期帳單粗估（見檔案下方 estimateNextBill() 說明）
+$nextBillEstimate = estimateNextBill($pdo);
+
 // All utility bills summary (paginated)
 $billPage = isset($_GET['bill_page']) ? (int)$_GET['bill_page'] : 1;
 $billPage = max(1, $billPage);
@@ -336,6 +339,125 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
     return [
         'records' => $stmt->fetchAll(),
         'total' => $total
+    ];
+}
+
+/**
+ * 用歷史台電帳單推算「本期尚未結算」的度數/金額落點。
+ * 資料越多，估算的信賴帶（用標準誤差算）會自動變窄；
+ * 某個季節（夏月/非夏月）累積到 >=3 期後，改用該季節專屬的平均值。
+ * 回傳 null 代表還沒有任何歷史帳單可供估算。
+ */
+function estimateNextBill($pdo)
+{
+    $bills = $pdo->query("
+        SELECT ub.period_start, ub.period_end, ub.kwh, ub.amount,
+               (SELECT COALESCE(SUM(er.diff_value), 0)
+                FROM electricity_readings er
+                JOIN units u2 ON u2.id = er.unit_id AND u2.is_active = 1
+                WHERE er.record_date BETWEEN ub.period_start AND ub.period_end) as submeter_total
+        FROM utility_bills ub
+        ORDER BY ub.period_end ASC
+    ")->fetchAll();
+
+    if (empty($bills)) {
+        return null;
+    }
+
+    $ratios = []; $rates = []; $periodDays = [];
+    $summerRatios = []; $summerRates = [];
+    $nonSummerRatios = []; $nonSummerRates = [];
+
+    foreach ($bills as $b) {
+        $kwh = (float)$b['kwh'];
+        if ($kwh <= 0) continue;
+        $sub = (float)$b['submeter_total'];
+        $ratio = ($kwh - $sub) / $kwh; // 公共用電佔比
+        $rate = (float)$b['amount'] / $kwh; // 每度平均金額（含累進費率的混合值）
+
+        $ratios[] = $ratio;
+        $rates[] = $rate;
+        $periodDays[] = (strtotime($b['period_end']) - strtotime($b['period_start'])) / 86400;
+
+        $startMonth = (int)date('n', strtotime($b['period_start']));
+        $isSummerBill = ($startMonth >= 6 && $startMonth <= 9); // 粗略以台電夏月(6-9月)為準
+        if ($isSummerBill) {
+            $summerRatios[] = $ratio; $summerRates[] = $rate;
+        } else {
+            $nonSummerRatios[] = $ratio; $nonSummerRates[] = $rate;
+        }
+    }
+
+    if (empty($ratios)) {
+        return null;
+    }
+
+    $lastBill = end($bills);
+    $periodStart = date('Y-m-d', strtotime($lastBill['period_end'] . ' +1 day'));
+    $today = date('Y-m-d');
+    if (strtotime($today) < strtotime($periodStart)) {
+        return null;
+    }
+    $daysElapsed = max(1, (int)((strtotime($today) - strtotime($periodStart)) / 86400));
+
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(er.diff_value), 0)
+        FROM electricity_readings er
+        JOIN units u2 ON u2.id = er.unit_id AND u2.is_active = 1
+        WHERE er.record_date BETWEEN ? AND ?
+    ");
+    $stmt->execute([$periodStart, $today]);
+    $submeterSoFar = (float)$stmt->fetchColumn();
+
+    $avgPeriodDays = array_sum($periodDays) / count($periodDays);
+    $projectedSubmeterFull = ($submeterSoFar / $daysElapsed) * $avgPeriodDays;
+
+    // 用「現在」的月份粗略判斷這一期比較接近夏月還是非夏月
+    $isSummerNow = ((int)date('n') >= 6 && (int)date('n') <= 9);
+    $seasonRatios = $isSummerNow ? $summerRatios : $nonSummerRatios;
+    $seasonRates  = $isSummerNow ? $summerRates  : $nonSummerRates;
+    $useSeasonal = count($seasonRatios) >= 3;
+
+    $statsOf = function (array $arr) {
+        $n = count($arr);
+        $mean = array_sum($arr) / $n;
+        if ($n < 2) {
+            return ['mean' => $mean, 'sem' => 0.0, 'n' => $n];
+        }
+        $variance = array_sum(array_map(fn($x) => ($x - $mean) ** 2, $arr)) / ($n - 1);
+        return ['mean' => $mean, 'sem' => sqrt($variance) / sqrt($n), 'n' => $n];
+    };
+
+    $ratioStats = $statsOf($useSeasonal ? $seasonRatios : $ratios);
+    $rateStats  = $statsOf($useSeasonal ? $seasonRates  : $rates);
+
+    $ratioLow  = max(0.0, $ratioStats['mean'] - $ratioStats['sem']);
+    $ratioHigh = min(0.6, $ratioStats['mean'] + $ratioStats['sem']);
+    $rateLow   = max(0.0, $rateStats['mean'] - $rateStats['sem']);
+    $rateHigh  = $rateStats['mean'] + $rateStats['sem'];
+
+    $totalLow  = $projectedSubmeterFull / (1 - $ratioLow);
+    $totalAvg  = $projectedSubmeterFull / (1 - $ratioStats['mean']);
+    $totalHigh = $projectedSubmeterFull / (1 - $ratioHigh);
+
+    return [
+        'period_start'            => $periodStart,
+        'days_elapsed'            => $daysElapsed,
+        'avg_period_days'         => round($avgPeriodDays),
+        'submeter_so_far'         => $submeterSoFar,
+        'projected_submeter_full' => $projectedSubmeterFull,
+        'used_seasonal'           => $useSeasonal,
+        'season_label'            => $isSummerNow ? '夏月(6-9月)' : '非夏月',
+        'sample_n'                => $ratioStats['n'],
+        'total_bill_n'            => count($ratios),
+        'ratio_mean'              => $ratioStats['mean'],
+        'rate_mean'               => $rateStats['mean'],
+        'total_low'               => $totalLow,
+        'total_avg'               => $totalAvg,
+        'total_high'              => $totalHigh,
+        'amount_low'              => $totalLow * $rateLow,
+        'amount_avg'              => $totalAvg * $rateStats['mean'],
+        'amount_high'             => $totalHigh * $rateHigh,
     ];
 }
 
@@ -620,6 +742,42 @@ function getUnitHistory($unit_id, $limit = 10, $offset = 0) {
         </div>
     </div>
 </div>
+
+<!-- Next Bill Estimate -->
+<?php if ($nextBillEstimate): ?>
+<div class="card shadow-sm mb-4 border-info-subtle">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-graph-up-arrow"></i> 下期帳單粗估</h6>
+        <span class="text-muted small">
+            <?= $nextBillEstimate['used_seasonal'] ? htmlspecialchars($nextBillEstimate['season_label']) . '同季 ' : '全部 ' ?><?= $nextBillEstimate['sample_n'] ?> 期資料
+        </span>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="text-muted small">本期起算</div>
+                <div><?= htmlspecialchars($nextBillEstimate['period_start']) ?> ~ 今天（第 <?= $nextBillEstimate['days_elapsed'] ?> 天）</div>
+                <div class="text-muted small mt-2">分錶累計（本期至今）</div>
+                <div class="fw-semibold"><?= number_format($nextBillEstimate['submeter_so_far'], 2) ?> 度</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">推算本期分錶總量（以歷史平均 <?= $nextBillEstimate['avg_period_days'] ?> 天計）</div>
+                <div class="fw-semibold"><?= number_format($nextBillEstimate['projected_submeter_full'], 2) ?> 度</div>
+                <div class="text-muted small mt-2">套用公共用電比例約 <?= number_format($nextBillEstimate['ratio_mean'] * 100, 1) ?>%</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">預估台電總表度數</div>
+                <div class="fw-semibold text-primary"><?= number_format($nextBillEstimate['total_low'], 0) ?> ~ <?= number_format($nextBillEstimate['total_high'], 0) ?> 度</div>
+                <div class="text-muted small mt-2">預估帳單金額（每度約 <?= number_format($nextBillEstimate['rate_mean'], 2) ?> 元）</div>
+                <div class="fw-semibold text-primary">NT$ <?= number_format($nextBillEstimate['amount_low'], 0) ?> ~ <?= number_format($nextBillEstimate['amount_high'], 0) ?></div>
+            </div>
+        </div>
+        <div class="text-muted small mt-3 border-top pt-2">
+            <i class="bi bi-info-circle"></i> 這是粗估，不是精準預測：只根據目前 <?= $nextBillEstimate['total_bill_n'] ?> 期歷史帳單推算，範圍會隨你之後每期登記新帳單自動變窄、變準；電價採歷史平均值換算，實際台電累進費率仍可能有落差。
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- All Utility Bills (Collapsed) -->
 <details class="mb-4">
